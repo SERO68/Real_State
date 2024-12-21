@@ -68,28 +68,48 @@ class VillaCard extends StatelessWidget {
   }
 
   Widget _buildImage() {
-    if (villa.imageUrlPath == null) {
+  if (villa.imageUrlPath == null) {
+    return Container(
+      color: Colors.grey.shade200,
+      child: const Center(
+        child: Icon(Icons.image_not_supported, size: 40),
+      ),
+    );
+  }
+
+  // Construct the full URL by combining the base URL with the image path
+  final imageUrl = 'http://realstateapi.runasp.net/${villa.imageUrlPath!.replaceAll('\\', '/')}';
+  
+  print('Loading image from URL: $imageUrl'); // For debugging
+
+  return Image.network(
+    imageUrl,
+    fit: BoxFit.cover,
+    loadingBuilder: (context, child, loadingProgress) {
+      if (loadingProgress == null) return child;
+      return Container(
+        color: Colors.grey.shade200,
+        child: Center(
+          child: CircularProgressIndicator(
+            value: loadingProgress.expectedTotalBytes != null
+                ? loadingProgress.cumulativeBytesLoaded / 
+                  loadingProgress.expectedTotalBytes!
+                : null,
+          ),
+        ),
+      );
+    },
+    errorBuilder: (context, error, stackTrace) {
+      print('Error loading image: $error'); // For debugging
       return Container(
         color: Colors.grey.shade200,
         child: const Center(
-          child: Icon(Icons.image_not_supported, size: 40),
+          child: Icon(Icons.error_outline, size: 40),
         ),
       );
-    }
-
-    return Image.network(
-      villa.imageUrlPath!,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Colors.grey.shade200,
-          child: const Center(
-            child: Icon(Icons.error_outline, size: 40),
-          ),
-        );
-      },
-    );
-  }
+    },
+  );
+}
 
   Widget _buildOverviews() {
     return Wrap(

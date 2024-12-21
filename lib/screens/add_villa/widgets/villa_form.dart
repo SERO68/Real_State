@@ -147,7 +147,7 @@ class _VillaFormState extends State<VillaForm> {
     );
   }
 
- Future<void> _handleSubmit() async {
+Future<void> _handleSubmit() async {
   if (_validateForm()) {
     try {
       showDialog(
@@ -170,39 +170,50 @@ class _VillaFormState extends State<VillaForm> {
         'price': _formData.price,
       };
 
-      if (widget.isEditing && widget.initialVilla?.unitID != null) {
+      if (widget.isEditing) {
         // Handle editing mode
-        setState(() => _isUploading = true);
+       if (_formData.images.isNotEmpty) {
+  setState(() => _isUploading = true);
+  
+  try {
+    final imageResult = await ApiService.uploadUnitImages(
+      unitId:  widget.initialVilla!.unitID.toString(),
+      imagePaths: _formData.images,
+    );
 
-        if (_formData.images.isNotEmpty) {
-          print('Uploading images for unit ID: ${widget.initialVilla!.unitID}');
-          
-          final imageResult = await ApiService.uploadUnitImages(
-            unitId: widget.initialVilla!.unitID.toString(),
-            imagePaths: _formData.images.where((path) => 
-              !path.startsWith('http') && !path.startsWith('https')
-            ).toList(),
-          );
+    if (!imageResult['success']) {
+      throw Exception(imageResult['message']);
+    }
+    if (imageResult['success']) {
+  // Refresh the villa data
+  final updatedVillaData = await ApiService.getCompoundUnits(widget.compoundId);
+  if (updatedVillaData['success']) {
+    // Find the updated villa
+    final units = updatedVillaData['data']['units'] as List;
+    final updatedUnit = units.firstWhere(
+      (unit) => unit['unitID'].toString() == widget.initialVilla!.unitID.toString(),
+      orElse: () => null,
+    );
+    if (updatedUnit != null) {
+      setState(() {
+        // Update the villa data with new image path
+        villaData['imageUrlPath'] = updatedUnit['imageUrlPath'];
+      });
+    }
+  }
+}
 
-          print('Image upload result: $imageResult');
 
-          if (!imageResult['success']) {
-            throw Exception(imageResult['message']);
-          }
-        }
-
-        setState(() => _isUploading = false);
-
-        if (context.mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Villa updated successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context, villaData);
-        }
+    // Log successful upload
+    print('Images uploaded successfully: ${imageResult['results']}');
+    
+  } catch (e) {
+    print('Error uploading images: $e');
+    throw Exception('Failed to upload images: $e');
+  } finally {
+    setState(() => _isUploading = false);
+  }
+}
       } else {
         // Handle adding new villa
         final result = await ApiService.addVilla(
@@ -210,52 +221,37 @@ class _VillaFormState extends State<VillaForm> {
           villaData: villaData,
         );
 
-        if (result['success']) {
-          // Get the unit ID from the response
-          String responseData = result['data'].toString();
-          // Extract unit ID from response if possible
-          RegExp regExp = RegExp(r'unitID: (\d+)');
-          Match? match = regExp.firstMatch(responseData);
+        if (result['success'] && result['data'] != null) {
+          final unitId = result['data']['unitID']?.toString();
           
-          if (match != null && _formData.images.isNotEmpty) {
-            String unitId = match.group(1)!;
-            print('Extracted Unit ID: $unitId');
+          if (unitId != null && _formData.images.isNotEmpty) {
+            setState(() => _isUploading = true);
             
             final imageResult = await ApiService.uploadUnitImages(
               unitId: unitId,
               imagePaths: _formData.images,
             );
 
-            print('Image upload result: $imageResult');
-
             if (!imageResult['success']) {
               throw Exception('Failed to upload images: ${imageResult['message']}');
             }
-          }
-
-          widget.onAddVilla(villaData);
-          
-          if (context.mounted) {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Villa added successfully'),
-                backgroundColor: Colors.green,
-              ),
-            );
-            Navigator.pop(context, villaData);
+            
+            setState(() => _isUploading = false);
           }
         } else {
-          if (context.mounted) {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['message'] ?? 'Failed to add villa'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
+          throw Exception('Failed to add villa: ${result['message']}');
         }
+      }
+
+      if (context.mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Villa operation completed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, villaData);
       }
     } catch (e) {
       print('Error in _handleSubmit: $e');
@@ -271,7 +267,6 @@ class _VillaFormState extends State<VillaForm> {
     }
   }
 }
-
 bool _validateForm() {
   if (_formData.unitName.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(

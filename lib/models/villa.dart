@@ -24,22 +24,20 @@ class Villa {
 
   factory Villa.fromJson(Map<String, dynamic> json) {
     return Villa(
-       unitID: json['unitID'] is String 
-          ? int.tryParse(json['unitID']) 
+      unitID: json['unitID'] is String
+          ? int.tryParse(json['unitID'])
           : json['unitID'],
       unitName: json['unitName'] ?? '',
       unitMainFeature: json['unitMainFeature'] ?? '',
       typeName: json['typeName'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
-      imageUrlPath: json['imageUrlPath'],
+    imageUrlPath: json['imageUrlPath'] ,  // Handle empty imageUrlPath
       numberOfReview: json['numberOfReview'],
-      overviews: json['overviews'] != null 
+      overviews: json['overviews'] != null
           ? List<Overview>.from(
               json['overviews'].map((x) => Overview.fromJson(x)))
           : [],
-      room: json['room'] != null 
-          ? List<String>.from(json['room'])
-          : [],
+      room: json['room'] != null ? List<String>.from(json['room']) : [],
     );
   }
 
@@ -89,4 +87,3 @@ class Overview {
     return 'Overview{iconName: $iconName, description: $description}';
   }
 }
-

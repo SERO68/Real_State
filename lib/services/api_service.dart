@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
@@ -65,25 +67,7 @@ static final Dio _dio = Dio(BaseOptions(
     }
   }
 
-  static Future<MultipartFile> _getMultipartFile(String imagePath) async {
-    if (kIsWeb) {
-      // Handle web file
-      String base64Image = imagePath.split(',').last;
-      List<int> imageBytes = base64Decode(base64Image);
-      return MultipartFile.fromBytes(
-        imageBytes,
-        filename: 'compound_image.jpg',
-        contentType: MediaType('image', 'jpeg'),
-      );
-    } else {
-      // Handle mobile/desktop file
-      return await MultipartFile.fromFile(
-        imagePath,
-        filename: 'compound_image.jpg',
-        contentType: MediaType('image', 'jpeg'),
-      );
-    }
-  }
+  
 
   static String _getErrorMessage(DioException e) {
     switch (e.type) {
@@ -241,8 +225,6 @@ static Future<Map<String, dynamic>> addVilla({
       "price": villaData['price']
     };
 
-    print('Sending request with body: ${jsonEncode(requestBody)}');
-
     final response = await _dio.post(
       '/api/$apiKey/AdminDashBoard/AddUnitForCompund/$compoundId',
       data: requestBody,
@@ -254,37 +236,23 @@ static Future<Map<String, dynamic>> addVilla({
       ),
     );
 
-    print('Response status: ${response.statusCode}');
-    print('Response data: ${response.data}');
-
     if (response.statusCode == 200) {
-      // Get the latest unit data
-      final getUnitResponse = await _dio.get(
-        '/api/Compound/GetOne/$compoundId',
-      );
-
-      if (getUnitResponse.statusCode == 200 && 
-          getUnitResponse.data['units'] != null &&
-          getUnitResponse.data['units'].isNotEmpty) {
-        // Get the last added unit
-        final lastUnit = getUnitResponse.data['units'].last;
-        return {
-          'success': true,
-          'message': 'Villa added successfully',
-          'data': lastUnit,
-        };
+      // Parse the response data
+      var responseData = response.data;
+      if (responseData is String) {
+        responseData = jsonDecode(responseData);
       }
 
       return {
         'success': true,
         'message': 'Villa added successfully',
-        'data': response.data,
+        'data': responseData,
       };
     } else {
       return {
         'success': false,
         'message': 'Failed to add villa: ${response.data}',
-        'data': response.data,
+        'data': null,
       };
     }
   } catch (e) {
@@ -293,59 +261,63 @@ static Future<Map<String, dynamic>> addVilla({
       'success': false,
       'message': 'An unexpected error occurred',
       'error': e.toString(),
+      'data': null,
     };
   }
 }
+
 
 static Future<Map<String, dynamic>> uploadUnitImages({
   required String unitId,
   required List<String> imagePaths,
 }) async {
   try {
-    print('Starting image upload for unit ID: $unitId');
-    print('Number of images to upload: ${imagePaths.length}');
-
+    print('Uploading images for unit ID: $unitId');
+    
     List<Map<String, dynamic>> results = [];
     
     for (String imagePath in imagePaths) {
-      print('Uploading image: $imagePath');
-      
+      // Create form data with the correct key 'photos'
       final formData = FormData.fromMap({
-        'file': await _getMultipartFile(imagePath),
+        'photos': await _getMultipartFile(imagePath),  // Changed from 'file' to 'photos'
       });
 
-      print('Sending request to: /api/$apiKey/AdminDashBoard/AddPhotoToUnit/$unitId');
+      print('Sending image upload request for unit $unitId');
       
       final response = await _dio.post(
-        '/api/$apiKey/AdminDashBoard/AddPhotoToUnit/$unitId',
+        '/api/$apiKey/AdminDashBoard/AddPhotoToUnit/$unitId',  // Correct endpoint
         data: formData,
         options: Options(
           headers: {
-            'Accept': 'application/json',
+            'accept': '*/*',
+            'Content-Type': 'multipart/form-data',
           },
-          followRedirects: false,
-          validateStatus: (status) => true,
         ),
       );
 
-      print('Image upload response status: ${response.statusCode}');
-      print('Image upload response data: ${response.data}');
+      print('Upload response status: ${response.statusCode}');
+      print('Upload response data: ${response.data}');
 
-      results.add({
-        'success': response.statusCode == 200,
-        'path': imagePath,
-        'response': response.data,
-      });
+      if (response.statusCode == 200) {
+        results.add({
+          'success': true,
+          'path': response.data?.toString() ?? '',
+          'response': response.data,
+        });
+      } else {
+        results.add({
+          'success': false,
+          'path': imagePath,
+          'error': 'Upload failed with status ${response.statusCode}',
+        });
+      }
     }
 
     bool allSuccessful = results.every((result) => result['success']);
     
-    print('All uploads completed. Success: $allSuccessful');
-    print('Upload results: $results');
-
     return {
       'success': allSuccessful,
-      'message': allSuccessful ? 'All images uploaded successfully' : 'Some images failed to upload',
+      'message': allSuccessful ? 'Images uploaded successfully' : 'Some images failed to upload',
       'results': results,
     };
   } catch (e) {
@@ -355,6 +327,35 @@ static Future<Map<String, dynamic>> uploadUnitImages({
       'message': 'Failed to upload images: ${e.toString()}',
       'error': e.toString(),
     };
+  }
+}
+
+// Update the _getMultipartFile method to ensure correct content type
+static Future<MultipartFile> _getMultipartFile(String imagePath) async {
+  try {
+    if (kIsWeb) {
+      if (imagePath.startsWith('data:image')) {
+        String base64Image = imagePath.split(',').last;
+        List<int> imageBytes = base64Decode(base64Image);
+        return MultipartFile.fromBytes(
+          imageBytes,
+          filename: 'image_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        );
+      }
+      throw Exception('Invalid image format for web');
+    } else {
+      File file = File(imagePath);
+      String fileName = imagePath.split('/').last;
+      return await MultipartFile.fromFile(
+        file.path,
+        filename: fileName,
+        contentType: MediaType('image', 'jpeg'),
+      );
+    }
+  } catch (e) {
+    print('Error creating MultipartFile: $e');
+    rethrow;
   }
 }
 }
